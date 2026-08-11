@@ -25,6 +25,7 @@
     <Using Include="ModdableWebServer.Helper" />
     <Using Include="ModdableWebServer.Senders" />
     <Using Include="System.Text.Json" />
+    <Using Include="Serilog" />
   </ItemGroup>
 
   <ItemGroup>

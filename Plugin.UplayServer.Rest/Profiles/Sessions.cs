@@ -1,10 +1,10 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Plugin.UplayServer.Rest.Profiles;
 
 /// <summary>
-/// POST /v3/profiles/sessions
+/// POST /v3/profiles/sessions the identity handshake.
 /// </summary>
 internal static class Sessions
 {
@@ -13,6 +13,8 @@ internal static class Sessions
     {
         var accountId = ParseBasicAuthAccountId(server) ?? Guid.NewGuid().ToString();
         var now = DateTime.UtcNow;
+
+        var spaceId = TitleRegistry.Resolve(server)?.SpaceId ?? "";
 
         var body = JsonSerializer.Serialize(new
         {
@@ -23,7 +25,7 @@ internal static class Sessions
             nameOnPlatform = "user",
             environment = "Prod",
             expiration = now.AddHours(3).ToString("o"),
-            spaceId = "6f75883b-3b5b-45ce-a2d4-2a7a8477180c", // TODO remove hardcoded spaces_id
+            spaceId,
             sessionId = Guid.NewGuid().ToString(),
             sessionKey = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32)),
             clientIp = "127.0.0.1",
@@ -40,7 +42,11 @@ internal static class Sessions
 
     private static string? ParseBasicAuthAccountId(ServerSender server)
     {
-        if (!server.Headers.TryGetValue("Authorization", out string? auth) || string.IsNullOrEmpty(auth))
+        // NOTE: ModdableWebServer lower-cases header keys (RequestExport.
+        // PopulateHeaders) looking up "Authorization" here never matched,
+        // so every login silently fell through to a random AccountId instead
+        // of the client's own.
+        if (!server.Headers.TryGetValue("authorization", out string? auth) || string.IsNullOrEmpty(auth))
             return null;
 
         const string prefix = "Basic ";

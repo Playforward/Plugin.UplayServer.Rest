@@ -1,14 +1,11 @@
-﻿using ModdableWebServer.Interfaces;
+using ModdableWebServer.Interfaces;
 using ServerShared.Controllers;
 using ServerShared.Plugins;
 using System.Reflection;
 
 namespace Plugin.UplayServer.Rest;
 
-/// <summary>
-/// Spoofs the real-Ubisoft UbiServices REST surface (public-ubiservices.ubi.com)
-/// </summary>
-public class UplayRestPlugin : ServerPlugin
+public class UplayRestPlugin : ServerPlugin<UplayRestSettings>
 {
     public override uint Priority => 0;
 
@@ -16,6 +13,27 @@ public class UplayRestPlugin : ServerPlugin
 
     public override void Start()
     {
+        if (!string.IsNullOrWhiteSpace(Config.AppId)
+            && !Config.Titles.Any(t => string.Equals(t.AppId, Config.AppId, StringComparison.OrdinalIgnoreCase)))
+        {
+            Log.Information("[rest] migrating legacy single-title config (AppId {AppId}) into Titles", Config.AppId);
+            Config.Titles.Add(new TitleSettings
+            {
+                Name = "migrated",
+                AppId = Config.AppId!,
+                SpaceId = Config.SpaceId ?? "",
+            });
+            Config.AppId = null;
+            Config.SpaceId = null;
+            SaveConfig();
+        }
+
+        TitleRegistry.Publish(Config.Titles);
+        foreach (var t in TitleRegistry.All)
+            Log.Information("[rest] serving {Name}: appId={AppId} spaceId={SpaceId} resources={Res}",
+                t.Name, t.AppId, t.SpaceId,
+                string.IsNullOrWhiteSpace(t.ResourceDir) ? "(built-in, retargeted)" : t.ResourceDir);
+
         var server = ServerController.Servers.FirstOrDefault(static x => x.Port == 443);
         if (server == null)
             return;
