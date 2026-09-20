@@ -11,10 +11,10 @@ internal static class RendezVousConfiguration
     [HTTP("GET", "/v1/spaces/{spaceId}/sandboxes/{sandbox}/rendezvous/configuration")]
     public static bool GetRendezVousConfiguration(ServerSender server)
     {
-        var title = TitleRegistry.ResolveForSpace(server);
+        var title = TitleResolver.ResolveForSpace(server);
         if (title is null) return false;
 
-        var body = TitleRegistry.Body(title, "rendezvous_configuration.json");
+        var body = TitleResolver.Body(title, "rendezvous_configuration.json");
         if (string.IsNullOrEmpty(body)) return false;
 
         if (title.AdvertiseLocalRendezVousIdentity)

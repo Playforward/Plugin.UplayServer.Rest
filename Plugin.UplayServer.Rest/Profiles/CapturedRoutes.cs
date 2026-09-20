@@ -5,11 +5,11 @@ internal static class CapturedRoutes
     private static bool Serve(ServerSender server, string fileName, bool requireMatchingSpace = false)
     {
         var title = requireMatchingSpace
-            ? TitleRegistry.ResolveForSpace(server)
-            : TitleRegistry.Resolve(server);
+            ? TitleResolver.ResolveForSpace(server)
+            : TitleResolver.Resolve(server);
         if (title is null) return false;
 
-        var body = TitleRegistry.Body(title, fileName);
+        var body = TitleResolver.Body(title, fileName);
         if (string.IsNullOrEmpty(body)) return false;
 
         if (body.Contains("{profileId}", StringComparison.Ordinal))

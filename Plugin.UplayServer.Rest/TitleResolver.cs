@@ -1,69 +1,86 @@
+using ServerShared.Titles;
 using System.Collections.Concurrent;
 using System.Reflection;
 
 namespace Plugin.UplayServer.Rest;
 
 /// <summary>
-/// Resolves which title a request belongs to, and serves that title's canned
-/// responses. Route handlers are static (ModdableWebServer's dispatch requires
-/// it) so they cannot reach the plugin instance's Config this is the bridge.
+/// Resolves which title an HTTP request belongs to, and serves that title's
+/// canned responses. The titles themselves come from the host's shared
+/// <see cref="TitleRegistry"/>; this only knows how a UbiServices request
+/// names one. Route handlers are static (ModdableWebServer's dispatch
+/// requires it), which is why this is too.
 /// </summary>
-internal static class TitleRegistry
+/// <remarks>
+/// HTTP is resolved by content -- the <c>Ubi-AppId</c> header, then the
+/// <c>spaceId</c> route parameter, then the <c>onlineConfigID</c> a
+/// pre-UbiServices title sends -- because every title dials the same
+/// bootstrap hostname, so unlike UDP there is no port to key on.
+/// </remarks>
+internal static class TitleResolver
 {
     private static readonly ConcurrentDictionary<string, string> BodyCache = new();
-    private static volatile TitleSettings[] _titles = [];
 
-    /// <summary>Published by <see cref="UplayRestPlugin.Start"/> before routes are merged.</summary>
-    public static void Publish(IEnumerable<TitleSettings> titles)
-    {
-        _titles = titles.Where(t => !string.IsNullOrWhiteSpace(t.AppId)).ToArray();
-        BodyCache.Clear();
-    }
+    public static IReadOnlyList<TitleDescriptor> All => TitleRegistry.All;
 
-    public static IReadOnlyList<TitleSettings> All => _titles;
-
-    public static TitleSettings? Resolve(ServerSender server)
+    public static TitleDescriptor? Resolve(ServerSender server)
     {
         // ModdableWebServer lower-cases header keys (RequestExport.PopulateHeaders).
         if (server.Headers.TryGetValue("ubi-appid", out var hdr) && !string.IsNullOrWhiteSpace(hdr))
         {
-            var byHeader = Find(t => Eq(t.AppId, hdr));
+            var byHeader = TitleRegistry.ByAppId(hdr);
             if (byHeader is not null) return byHeader;
             Log.Warning("[rest] request from unconfigured title (Ubi-AppId {AppId}) — add it to "
-                      + "Configs/UplayServer.RestConfig.json with its captured responses", hdr);
+                      + "Configs/{File} with its captured responses", hdr, TitleRegistry.ConfigFileName);
             return null;
         }
         if (server.Parameters.TryGetValue("appId", out var appId))
-            return Find(t => Eq(t.AppId, appId));
+            return TitleRegistry.ByAppId(appId);
         if (server.Parameters.TryGetValue("spaceId", out var spaceId))
-            return Find(t => Eq(t.SpaceId, spaceId));
+            return TitleRegistry.BySpaceId(spaceId);
         return null;
     }
 
-    public static TitleSettings? ResolveForSpace(ServerSender server)
+    public static TitleDescriptor? ResolveForSpace(ServerSender server)
     {
         var title = Resolve(server);
         if (title is null) return null;
-        if (server.Parameters.TryGetValue("spaceId", out var spaceId) && !Eq(title.SpaceId, spaceId))
+        if (server.Parameters.TryGetValue("spaceId", out var spaceId) && !Eq(title.Matchers.SpaceId, spaceId))
         {
             Log.Warning("[rest] {Name} asked for spaceId {Asked} but is configured as {Configured}",
-                title.Name, spaceId, title.SpaceId);
+                title.Name, spaceId, title.Matchers.SpaceId);
             return null;
         }
         return title;
     }
 
-    public static TitleSettings? ResolveForApp(ServerSender server)
+    public static TitleDescriptor? ResolveForApp(ServerSender server)
     {
         var title = Resolve(server);
         if (title is null) return null;
-        if (server.Parameters.TryGetValue("appId", out var appId) && !Eq(title.AppId, appId))
+        if (server.Parameters.TryGetValue("appId", out var appId) && !Eq(title.Matchers.AppId, appId))
             return null;
         return title;
     }
 
-    public static string? Body(TitleSettings title, string fileName)
-        => BodyCache.GetOrAdd($"{title.AppId}/{fileName}", _ =>
+    /// <summary>
+    /// Resolves a pre-UbiServices title (Far Cry 3-era: OnlineConfigService.svc
+    /// et al.) by the "onlineConfigID" GUID it sends — the only identifier
+    /// these clients ever provide. See LegacyRoutes/.
+    /// </summary>
+    public static TitleDescriptor? ResolveLegacy(ServerSender server)
+    {
+        if (!server.Parameters.TryGetValue("onlineConfigID", out var id) || string.IsNullOrWhiteSpace(id))
+            return null;
+        var title = TitleRegistry.ByLegacyOnlineConfigId(id);
+        if (title is null)
+            Log.Warning("[rest] legacy request with unconfigured onlineConfigID {Id} — add a title "
+                      + "for it in Configs/{File} (Matchers.LegacyOnlineConfigId)", id, TitleRegistry.ConfigFileName);
+        return title;
+    }
+
+    public static string? Body(TitleDescriptor title, string fileName)
+        => BodyCache.GetOrAdd($"{title.TitleId}/{fileName}", _ =>
         {
             if (!string.IsNullOrWhiteSpace(title.ResourceDir))
             {
@@ -88,8 +105,8 @@ internal static class TitleRegistry
                 return "";
             }
             return embedded
-                .Replace(FcndSpaceId, title.SpaceId)
-                .Replace(FcndAppId, title.AppId);
+                .Replace(FcndSpaceId, title.Matchers.SpaceId)
+                .Replace(FcndAppId, title.Matchers.AppId);
         }) is { Length: > 0 } body ? body : null;
 
     private const string FcndSpaceId = "6f75883b-3b5b-45ce-a2d4-2a7a8477180c";
@@ -105,9 +122,6 @@ internal static class TitleRegistry
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
-
-    private static TitleSettings? Find(Func<TitleSettings, bool> pred)
-        => Array.Find(_titles, new Predicate<TitleSettings>(pred));
 
     private static bool Eq(string? a, string? b)
         => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
