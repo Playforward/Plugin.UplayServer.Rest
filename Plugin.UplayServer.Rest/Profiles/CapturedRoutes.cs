@@ -12,15 +12,30 @@ internal static class CapturedRoutes
         var body = TitleResolver.Body(title, fileName);
         if (string.IsNullOrEmpty(body)) return false;
 
-        if (body.Contains("{profileId}", StringComparison.Ordinal))
-        {
-            server.Parameters.TryGetValue("profileId", out var pid);
-            body = body.Replace("{profileId}", pid ?? "");
-        }
+        server.Parameters.TryGetValue("profileId", out var pid);
+        string? filled = WithProfileId(body, pid);
+        if (filled is null) return false;
 
-        server.Response.MakeGetResponse(body, "application/json");
+        server.Response.MakeGetResponse(filled, "application/json");
         server.SendResponse();
         return true;
+    }
+
+    private const string ProfileIdPlaceholder = "{profileId}";
+
+    /// <summary>
+    /// Fills a captured body's profile id placeholder from the URL, or null
+    /// when the URL's value is not a profile id.
+    /// </summary>
+    internal static string? WithProfileId(string body, string? profileId)
+    {
+        if (!body.Contains(ProfileIdPlaceholder, StringComparison.Ordinal))
+            return body;
+        if (string.IsNullOrEmpty(profileId))
+            return body.Replace(ProfileIdPlaceholder, "");
+        if (!Guid.TryParse(profileId, out Guid parsed))
+            return null;
+        return body.Replace(ProfileIdPlaceholder, parsed.ToString("D"));
     }
 
     [HTTP("GET", "/v1/spaces/{spaceId}/items/all")]

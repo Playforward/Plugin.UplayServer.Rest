@@ -29,6 +29,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Plugin.UplayServer.Rest.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="Resources\configuration.json" />
     <EmbeddedResource Include="Resources\entities.json" />
     <EmbeddedResource Include="Resources\configs_events.json" />

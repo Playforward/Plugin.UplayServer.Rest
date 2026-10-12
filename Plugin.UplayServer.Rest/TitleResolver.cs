@@ -21,6 +21,15 @@ internal static class TitleResolver
 {
     private static readonly ConcurrentDictionary<string, string> BodyCache = new();
 
+    /// <summary>
+    /// How many distinct unconfigured AppIds are reported. Far more than the
+    /// handful of titles anybody sets up in one go; past it, the values are
+    /// somebody sending noise.
+    /// </summary>
+    private const int UnconfiguredAppIdsReported = 64;
+
+    private static readonly LogOnce UnconfiguredAppIds = new(UnconfiguredAppIdsReported);
+
     public static IReadOnlyList<TitleDescriptor> All => TitleRegistry.All;
 
     public static TitleDescriptor? Resolve(ServerSender server)
@@ -30,8 +39,14 @@ internal static class TitleResolver
         {
             var byHeader = TitleRegistry.ByAppId(hdr);
             if (byHeader is not null) return byHeader;
-            Log.Warning("[rest] request from unconfigured title (Ubi-AppId {AppId}) — add it to "
-                      + "Configs/{File} with its captured responses", hdr, TitleRegistry.ConfigFileName);
+            if (UnconfiguredAppIds.First(hdr, () => Log.Warning(
+                    "[rest] {Count} distinct unconfigured Ubi-AppIds reported; further ones are not logged",
+                    UnconfiguredAppIdsReported)))
+            {
+                Log.Warning("[rest] request from unconfigured title (Ubi-AppId {AppId}) — add it to "
+                          + "Configs/{File} with its captured responses (logged once per AppId)",
+                    hdr, TitleRegistry.ConfigFileName);
+            }
             return null;
         }
         if (server.Parameters.TryGetValue("appId", out var appId))

@@ -90,6 +90,15 @@ public class UplayRestPlugin : ServerPlugin<UplayRestSettings>
         SaveConfig();
     }
 
+    /// <summary>
+    /// How many distinct unmatched requests (method, path, AppId) are dumped.
+    /// Enough to cover every route a title calls while it is being brought up;
+    /// past it, the paths are somebody probing.
+    /// </summary>
+    private const int UnmatchedRequestsReported = 256;
+
+    private static readonly LogOnce UnmatchedRequests = new(UnmatchedRequestsReported);
+
     private static void OnRequestUnmatched(object? sender, ReceivedFailedEventArgs e)
     {
         var request = e.Request;
@@ -105,6 +114,14 @@ public class UplayRestPlugin : ServerPlugin<UplayRestSettings>
             headers.TryGetValue("ubi-appid", out appId!);
         }
         catch { /* header parsing is best-effort; never break on a log path */ }
+
+        string path = url.Split('?', 2)[0];
+        if (!UnmatchedRequests.First($"{request.Method} {path} {appId}", () => Log.Warning(
+                "[rest] {Count} distinct unmatched requests dumped; further ones are not logged",
+                UnmatchedRequestsReported)))
+        {
+            return;
+        }
 
         // Dump the full request on a 404. Knowing a route is missing is only
         // half of it -- to implement the handler you need the exact headers

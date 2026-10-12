@@ -20,11 +20,8 @@ internal static class Sessions
     [HTTP("POST", "/v3/profiles/sessions")]
     public static bool CreateSession(ServerSender server)
     {
-        Log.Information("[fc4-capture] POST {Url} headers={Headers} body={Body}",
-            server.Request.Url,
-            string.Join(", ", server.Headers.Select(h => h.Key.Equals("authorization", StringComparison.OrdinalIgnoreCase)
-                ? $"{h.Key}=<redacted>" : $"{h.Key}={h.Value}")),
-            string.IsNullOrEmpty(server.Request.Body) ? "<empty>" : server.Request.Body);
+        Log.Debug("[ubiservices] POST {Path} ({Length} body bytes)",
+            server.Request.Url, server.Request.Body?.Length ?? 0);
         var accountId = ParseBasicAuthAccountId(server) ?? Guid.NewGuid().ToString();
         var now = DateTime.UtcNow;
         var sessionId = Guid.NewGuid().ToString();
@@ -57,8 +54,7 @@ internal static class Sessions
         // the SDK in its generic "service unavailable" state.
         server.Response.SetHeader("Ubi-SessionId", sessionId);
         server.Response.SetCookie("Ubi-SessionId", sessionId, path: "/");
-        Log.Information("[fc4-capture] session response status=200 sessionId={SessionId} profileId={ProfileId} spaceId={SpaceId}",
-            sessionId, accountId, spaceId);
+        Log.Debug("[ubiservices] session created for space {SpaceId}", spaceId);
         server.SendResponse();
         return true;
     }
